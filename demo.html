@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<title>sicas demo</title>
+		<style>
+			form.sicas
+			{
+				box-shadow: 0 0 5px 0 #ccc;
+				font-size: 0;
+				padding: 5px;
+				margin: auto;
+				width: 128px;
+			}
+			
+			.sicas input
+			{
+				box-sizing: border-box;
+				font-family: monospace;
+				width: 50%;
+			}
+		</style>
+	</head>
+	
+	<body>
+		<form class="sicas" method="post" action="//localhost:20938/validate">
+			<img src="//localhost:20938/captcha?width=128" alt="captcha">
+			<input type="text" name="sicas">
+			<input type="submit" value="OK!">
+		</form>
+	</body>
+</html>
