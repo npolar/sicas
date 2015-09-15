@@ -145,6 +145,20 @@ int main(string[] args)
 			++glyphOffset;
 		}
 		
+		// Add some random noise to image
+		for(x = 0; x < width; ++x)
+		{
+			for(y = 0; y < height; ++y)
+			{
+				if(uniform(0, 789) < 13)
+				{
+					pixelOffset = (y * width * 4) + (x * 4);
+					auto pixel = image.image[pixelOffset .. pixelOffset + 4];
+					image.image[pixelOffset .. pixelOffset + 4] = [ cast(char) uniform(0, 255), 0xFF ^ pixel[1], 0xFF ^ pixel[2], cast(char) uniform(0, 255) ];
+				}
+			}
+		}
+		
 		// Generate base64-encoded cookie key and captcha UUID
 		string cookieKey = "sicas-" ~ toHexString(md5Of(randomUUID().toString())).idup;
 		string uuid = randomUUID().toString();
