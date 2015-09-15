@@ -3,7 +3,7 @@ import sicas.fonts;
 import vibe.d;
 
 import std.math			: floor;
-import std.algorithm	: fill, sum;
+import std.algorithm	: fill, sum, max;
 import std.random		: Random, randomCover, unpredictableSeed, uniform;
 import std.conv			: to;
 import std.stdio		: stderr, writefln;
@@ -14,6 +14,9 @@ import std.regex		: matchFirst;
 
 int main(string[] args)
 {
+	enum	PROGRAM_VERSION		= "1.0";
+	enum	PROGRAM_BUILD_YEAR	= "2015";
+	
 	ushort	captchaLength		= 6;			// Minimum (default) captcha string length
 	string	fontName			= null;
 	ushort	port				= 0x51CA;		// 20938
@@ -21,13 +24,48 @@ int main(string[] args)
 	ushort	imageWidth			= 64;			// Minimum (default) image width in pixels
 	ushort	timeout				= 120;			// Captcha timeout in seconds
 	
-	getopt(args,
+	// Parse program arguments as options
+	bool optHelp, optVersion;
+	auto optParser = getopt(args,
 		"h|height",		"captcha image height (default: 32)",			&imageHeight,
 		"l|length",		"captcha string length (default: 6)",			&captchaLength,
 		"p|port",		"sicas server port (default: 20938)",			&port,
 		"w|width",		"captcha image width (default: 64)",			&imageWidth,
-		"t|timeout",	"response timeout in seconds (default: 120)",	&timeout
+		"t|timeout",	"response timeout in seconds (default: 120)",	&timeout,
+		"help",			"display this help information and exit",		&optHelp,
+		"version",		"display version information and exit",			&optVersion
 	);
+	
+	// Remove default help option
+	optParser.options = optParser.options[0 .. $ - 1];
+	
+	// Handle custom help output
+	if(optHelp)
+	{
+		writefln("Usage: %s [OPTION]...", args[0]);
+		writefln("Simple Image Captcha Server\n");
+		
+		size_t longestLength;
+		
+		foreach(opt; optParser.options)
+			longestLength = max(longestLength, opt.optLong.length);
+		
+		foreach(opt; optParser.options)
+			writefln("  %s %-*s %s", (opt.optShort ? opt.optShort ~ "," : "   "), longestLength, opt.optLong, opt.help);
+			
+		return 0;
+	}
+	
+	// Handle version output
+	if(optVersion)
+	{
+		writefln("sicas (Simple Image Captcha Server) v%s", PROGRAM_VERSION);
+		writefln("Copyright (C) %s - Norwegian Polar Institute", PROGRAM_BUILD_YEAR);
+		writefln("Licensed under the MIT license <http://opensource.org/licenses/MIT>");
+		writefln("This is free software; you are free to change and redistribute it.");
+		writefln("\nWritten by: Remi A. Solås (remi@npolar.no)");
+		return 0;
+	}
 	
 	Font* captchaFont;			// Pointer to sicas font in use
 	string[string] captchas;	// UUID-map of captcha strings
