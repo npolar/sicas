@@ -14,7 +14,7 @@ import std.regex		: matchFirst;
 
 int main(string[] args)
 {
-	enum	PROGRAM_VERSION		= "1.0";
+	enum	PROGRAM_VERSION		= "1.10";
 	enum	PROGRAM_BUILD_YEAR	= "2015";
 	
 	ushort	captchaLength		= 6;			// Minimum (default) captcha string length
