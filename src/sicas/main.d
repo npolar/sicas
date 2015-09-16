@@ -14,7 +14,7 @@ import std.regex		: matchFirst;
 
 int main(string[] args)
 {
-	enum	PROGRAM_VERSION		= "1.10";
+	enum	PROGRAM_VERSION		= "1.20";
 	enum	PROGRAM_BUILD_YEAR	= "2015";
 	
 	ushort	captchaLength		= 6;			// Minimum (default) captcha string length
@@ -178,11 +178,33 @@ int main(string[] args)
 	// Function called to validate captcha string
 	void routeValidate(HTTPServerRequest req, HTTPServerResponse res)
 	{
+		static struct Response
+		{
+			this(in int status, in string reason)
+			{
+				this.status = status;
+				this.success = status >= 200 && status < 300;
+				this.reason = reason;
+			}
+			
+			int		status;
+			string	reason;
+			bool	success;
+		}
+		
 		// Enforce POST method
-		enforceHTTP(req.method == HTTPMethod.POST, HTTPStatus.methodNotAllowed, "Expected method POST on path: /validate");
+		if(req.method != HTTPMethod.POST)
+		{
+			res.writeJsonBody(Response(HTTPStatus.methodNotAllowed, "Expected POST"), HTTPStatus.methodNotAllowed);
+			return;
+		}
 		
 		// Enforce captcha input as sicas from form
-		enforceHTTP("sicas" in req.form, HTTPStatus.badRequest, "Missing captcha");
+		if(!("sicas" in req.form))
+		{
+			res.writeJsonBody(Response(HTTPStatus.badRequest, "Missing captcha input"), HTTPStatus.badRequest);
+			return;
+		}
 		
 		string captchaString = req.form["sicas"], uuid;
 		
@@ -203,31 +225,27 @@ int main(string[] args)
 			if((uuid in captchas) && (captchas[uuid] == captchaString))
 			{
 				// Return 200 (Ok) if the captcha validation succeeded
-				res.writeBody("Success", "text/plain");
-				res.statusCode = HTTPStatus.ok;
+				res.writeJsonBody(Response(HTTPStatus.ok, "Success"), HTTPStatus.ok);
 				captchas.remove(uuid);
 			}
 			else
 			{
 				// Return 410 (Gone) if the captcha has timed-out
-				res.writeBody("Captcha timeout", "text/plain");
-				res.statusCode = HTTPStatus.gone;
+				res.writeJsonBody(Response(HTTPStatus.gone, "Captcha timeout"), HTTPStatus.gone);
 			}
 			
 			return;
 		}
 		
 		// Return 403 (Forbidden) if the captcha validation failed
-		res.writeBody("Invalid captcha", "text/plain");
-		res.statusCode = HTTPStatus.forbidden;
-		return;
+		res.writeJsonBody(Response(HTTPStatus.forbidden, "Invalid captcha"), HTTPStatus.forbidden);
 	}
 	
 	// Create URL routes for captcha generation/validation
 	auto router = new URLRouter;
 	router
-	.get("/captcha", &routeCaptcha)
-	.post("/validate", &routeValidate);
+	.any("/captcha", &routeCaptcha)
+	.any("/validate", &routeValidate);
 	
 	// Set specified lister port, and enable worker-thread distribution
 	auto httpSettings = new HTTPServerSettings;
