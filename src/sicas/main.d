@@ -9,7 +9,7 @@ import std.conv			: to;
 import std.stdio		: stderr, writefln;
 import std.getopt		: getopt;
 import std.uuid			: UUID, randomUUID;
-import std.digest.md	: md5Of, toHexString;
+import std.digest.sha	: sha1Of, toHexString;
 import std.regex		: matchFirst;
 
 int main(string[] args)
@@ -159,9 +159,9 @@ int main(string[] args)
 			}
 		}
 		
-		// Generate base64-encoded cookie key and captcha UUID
-		string cookieKey = "sicas-" ~ toHexString(md5Of(randomUUID().toString())).idup;
+		// Generate captcha UUID, and cookie key
 		string uuid = randomUUID().toString();
+		string cookieKey = "sicas-" ~ toHexString(sha1Of(uuid ~ captchaString)).idup;
 			
 		// Add captcha to cache and timeout for removal
 		captchas[uuid] = captchaString;
@@ -181,45 +181,46 @@ int main(string[] args)
 		// Enforce POST method
 		enforceHTTP(req.method == HTTPMethod.POST, HTTPStatus.methodNotAllowed, "Expected method POST on path: /validate");
 		
-		if("sicas" in req.form)
+		// Enforce captcha input as sicas from form
+		enforceHTTP("sicas" in req.form, HTTPStatus.badRequest, "Missing captcha");
+		
+		string captchaString = req.form["sicas"], uuid;
+		
+		// Read UUID from cookie
+		foreach(cookie; req.cookies)
 		{
-			string captcha = req.form["sicas"];
-			string uuid;
+			auto match = matchFirst(cookie.name, "^sicas-([A-F0-9]{40})$");
 			
-			foreach(cookie; req.cookies)
+			if(!match.empty && match[1] == toHexString(sha1Of(cookie.value ~ captchaString)))
 			{
-				auto match = matchFirst(cookie.name, "^sicas-[A-F0-9]{32}$");
-				
-				if(!match.empty && ((uuid = cookie.value) in captchas))
-				{
-					if(captchas[uuid] == captcha)
-					{
-						res.writeBody("Success!", "text/plain");
-						res.statusCode = HTTPStatus.ok;
-						return;
-					}
-				}
+				uuid = cookie.value;
+				break;
 			}
-			
-			if(uuid)
+		}
+		
+		if(uuid)
+		{
+			if((uuid in captchas) && (captchas[uuid] == captchaString))
 			{
-				// Return 403 (Forbidden) if the captcha validation failed
-				res.writeBody("Invalid captcha", "text/plain");
-				res.statusCode = HTTPStatus.forbidden;
+				// Return 200 (Ok) if the captcha validation succeeded
+				res.writeBody("Success", "text/plain");
+				res.statusCode = HTTPStatus.ok;
+				captchas.remove(uuid);
 			}
 			else
 			{
-				// Return 410 (Gone) if the captcha doesn't exist (has timed-out)
+				// Return 410 (Gone) if the captcha has timed-out
 				res.writeBody("Captcha timeout", "text/plain");
 				res.statusCode = HTTPStatus.gone;
 			}
+			
+			return;
 		}
-		else
-		{
-			// Return 400 (Bad Request) if sicas was not found as a form POST element
-			res.writeBody("Missing captcha", "text/plain");
-			res.statusCode = HTTPStatus.badRequest;
-		}
+		
+		// Return 403 (Forbidden) if the captcha validation failed
+		res.writeBody("Invalid captcha", "text/plain");
+		res.statusCode = HTTPStatus.forbidden;
+		return;
 	}
 	
 	// Create URL routes for captcha generation/validation
