@@ -3,7 +3,7 @@ import sicas.fonts;
 import vibe.d;
 
 import std.math			: floor;
-import std.algorithm	: fill, sum, max;
+import std.algorithm	: equal, fill, sum, max;
 import std.random		: Random, randomCover, unpredictableSeed, uniform;
 import std.conv			: to;
 import std.stdio		: stderr, writefln;
@@ -11,10 +11,33 @@ import std.getopt		: getopt;
 import std.uuid			: UUID, randomUUID;
 import std.digest.sha	: sha1Of, toHexString;
 import std.regex		: matchFirst;
+import std.uni			: asCapitalized;
+import std.base64		: Base64URL;
+
+struct Captcha
+{
+	string	text;
+	ubyte[]	image;
+	SysTime expires;
+}
+
+struct Response
+{
+	this(in int status, in string reason)
+	{
+		this.status = status;
+		this.success = status >= 200 && status < 300;
+		this.reason = reason;
+	}
+	
+	int		status;
+	string	reason;
+	bool	success;
+}
 
 int main(string[] args)
 {
-	enum	PROGRAM_VERSION		= "1.20";
+	enum	PROGRAM_VERSION		= "1.30";
 	enum	PROGRAM_BUILD_YEAR	= "2015";
 	
 	ushort	captchaLength		= 6;			// Minimum (default) captcha string length
@@ -68,7 +91,7 @@ int main(string[] args)
 	}
 	
 	Font* captchaFont;			// Pointer to sicas font in use
-	string[string] captchas;	// UUID-map of captcha strings
+	Captcha[string] captchas;	// Map of captchas
 	
 	// Use specified font if set, otherwise fallback to default
 	if(fontName)
@@ -84,8 +107,8 @@ int main(string[] args)
 	// Function called to generate new captcha image
 	void routeCaptcha(HTTPServerRequest req, HTTPServerResponse res)
 	{
-		// Enforce GET method
-		enforceHTTP(req.method == HTTPMethod.GET, HTTPStatus.methodNotAllowed, "Expected method GET on path: /captcha");
+		// Enforce GET or HEAD method
+		enforceHTTP(req.method == HTTPMethod.GET || req.method == HTTPMethod.HEAD, HTTPStatus.methodNotAllowed, "Expected method GET on path: /captcha");
 		
 		ushort width	= imageWidth;
 		ushort height	= imageHeight;
@@ -159,93 +182,124 @@ int main(string[] args)
 			}
 		}
 		
-		// Generate captcha UUID, and cookie key
+		// Generate captcha UUID and expire time
 		string uuid = randomUUID().toString();
-		string cookieKey = "sicas-" ~ toHexString(sha1Of(uuid ~ captchaString)).idup;
+		auto expires = Clock.currTime + timeout.seconds;
 			
 		// Add captcha to cache and timeout for removal
-		captchas[uuid] = captchaString;
-		setTimer((timeout).seconds, { captchas.remove(uuid); });
+		captchas[uuid] = Captcha(captchaString, cast(ubyte[]) image.data, expires);
+		setTimer(timeout.seconds, { captchas.remove(uuid); });
 		
-		// Add cookie with UUID and expire time
-		res.setCookie(cookieKey, uuid);
-		res.cookies[cookieKey].maxAge = timeout;
+		// Add response headers
+		res.headers["Access-Control-Allow-Origin"] = "*";
+		res.headers["Content-Location"] = "/image/" ~ uuid;
+		res.headers["Expires"] = toRFC822DateTimeString(expires);
+		
+		res.writeJsonBody([
+			"uuid": uuid,
+			"path": res.headers["Content-Location"],
+			"expires": (expires).toUTC.toISOString
+		], HTTPStatus.ok);
+	}
+	
+	// Function called to retrieve captcha image from uuid (etag)
+	void routeImage(HTTPServerRequest req, HTTPServerResponse res)
+	{
+		// Enforce GET method
+		enforceHTTP(req.method == HTTPMethod.GET, HTTPStatus.methodNotAllowed, "Expected method GET on path: /image");
+		
+		// Captcha UUID string variable
+		string uuid;
+		
+		// Make sure captcha UUID exists
+		if(!((uuid = req.params["uuid"]) in captchas))
+		{
+			// Return 404 (Not Found) if the UUID does not exist
+			res.writeJsonBody(Response(HTTPStatus.notFound, "Captcha image not found"), HTTPStatus.notFound);
+			return;
+		}
+		
+		// Add response headers
+		res.headers["ETag"] = uuid;
+		res.headers["Expires"] = toRFC822DateTimeString(captchas[uuid].expires);
 		
 		// Add captcha image to response body
-		res.writeBody(cast(ubyte[]) image.data, "image/png");
+		res.writeBody(captchas[uuid].image, "image/png");
 	}
 	
 	// Function called to validate captcha string
 	void routeValidate(HTTPServerRequest req, HTTPServerResponse res)
 	{
-		static struct Response
+		// Captcha UUID and text variables
+		string uuid, text;
+		
+		// Make sure UUID has been provided
+		if(!("uuid" in req.params) || !req.params["uuid"].length)
 		{
-			this(in int status, in string reason)
-			{
-				this.status = status;
-				this.success = status >= 200 && status < 300;
-				this.reason = reason;
-			}
-			
-			int		status;
-			string	reason;
-			bool	success;
+			// Return 400 (Bad Request) if no UUID was provided
+			res.writeJsonBody(Response(HTTPStatus.badRequest, "Missing captcha UUID on path: /validate"), HTTPStatus.badRequest);
+			return;
 		}
 		
-		// Enforce POST method
-		if(req.method != HTTPMethod.POST)
+		// Make sure captcha exists (has not timed out)
+		if(!((uuid = req.params["uuid"]) in captchas))
 		{
-			res.writeJsonBody(Response(HTTPStatus.methodNotAllowed, "Expected POST"), HTTPStatus.methodNotAllowed);
+			// Return 404 (Not Found) if the UUID does not exist
+			res.writeJsonBody(Response(HTTPStatus.notFound, "Captcha not found"), HTTPStatus.notFound);
+			return;
+		}
+		
+		// First try validating captcha using Authorization header
+		if("Authorization" in req.headers)
+		{
+			// Enforce GET method
+			enforceHTTP(req.method == HTTPMethod.GET, HTTPStatus.methodNotAllowed, "Expected method GET when using Authorization header");
+			
+			// Make sure Authorization method is Sicas
+			if(!req.headers["Authorization"][0 .. 6].asCapitalized.equal("Sicas "))
+			{
+				// Return 400 (Bad Request) if Authorizationn header is not Sicas
+				res.writeJsonBody(Response(HTTPStatus.badRequest, "Unsupported authorization method"), HTTPStatus.badRequest);
+				return;
+			}
+			
+			text = cast(string) Base64URL.decode(req.headers["Authorization"][6 .. $]);
+		}
+		
+		// ...otherwise validate captcha using POST
+		else if(req.method != HTTPMethod.POST)
+		{
+			res.writeJsonBody(Response(HTTPStatus.methodNotAllowed, "Expected method POST when not using Authorization header"), HTTPStatus.methodNotAllowed);
 			return;
 		}
 		
 		// Enforce captcha input as sicas from form
-		if(!("sicas" in req.form))
+		else if(!("sicas" in req.form))
 		{
 			res.writeJsonBody(Response(HTTPStatus.badRequest, "Missing captcha input"), HTTPStatus.badRequest);
 			return;
 		}
+		else text = req.form["sicas"];
 		
-		string captchaString = req.form["sicas"], uuid;
-		
-		// Read UUID from cookie
-		foreach(cookie; req.cookies)
+		// Validate captcha
+		if(text != captchas[uuid].text)
 		{
-			auto match = matchFirst(cookie.name, "^sicas-([A-F0-9]{40})$");
-			
-			if(!match.empty && match[1] == toHexString(sha1Of(cookie.value ~ captchaString)))
-			{
-				uuid = cookie.value;
-				break;
-			}
-		}
-		
-		if(uuid)
-		{
-			if((uuid in captchas) && (captchas[uuid] == captchaString))
-			{
-				// Return 200 (Ok) if the captcha validation succeeded
-				res.writeJsonBody(Response(HTTPStatus.ok, "Success"), HTTPStatus.ok);
-				captchas.remove(uuid);
-			}
-			else
-			{
-				// Return 410 (Gone) if the captcha has timed-out
-				res.writeJsonBody(Response(HTTPStatus.gone, "Captcha timeout"), HTTPStatus.gone);
-			}
-			
+			// Return 403 (Forbidden) if the captcha is invalid
+			res.writeJsonBody(Response(HTTPStatus.forbidden, "Invalid captcha"), HTTPStatus.forbidden);
 			return;
 		}
 		
-		// Return 403 (Forbidden) if the captcha validation failed
-		res.writeJsonBody(Response(HTTPStatus.forbidden, "Invalid captcha"), HTTPStatus.forbidden);
+		// Return 200 (Ok) if the captcha validation succeeded
+		res.writeJsonBody(Response(HTTPStatus.ok, "Success"), HTTPStatus.ok);
+		captchas.remove(uuid);
 	}
 	
 	// Create URL routes for captcha generation/validation
 	auto router = new URLRouter;
 	router
 	.any("/captcha", &routeCaptcha)
-	.any("/validate", &routeValidate);
+	.any("/image/:uuid", &routeImage)
+	.any("/validate/:uuid", &routeValidate);
 	
 	// Set specified lister port, and enable worker-thread distribution
 	auto httpSettings = new HTTPServerSettings;
