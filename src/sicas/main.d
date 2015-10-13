@@ -108,7 +108,7 @@ int main(string[] args)
 	void routeCaptcha(HTTPServerRequest req, HTTPServerResponse res)
 	{
 		// Enforce GET or HEAD method
-		enforceHTTP(req.method == HTTPMethod.GET || req.method == HTTPMethod.HEAD, HTTPStatus.methodNotAllowed, "Expected method GET on path: /captcha");
+		enforceHTTP(req.method == HTTPMethod.GET || req.method == HTTPMethod.HEAD, HTTPStatus.methodNotAllowed, "Expected GET on path: /captcha");
 		
 		ushort width	= imageWidth;
 		ushort height	= imageHeight;
@@ -206,7 +206,7 @@ int main(string[] args)
 	void routeImage(HTTPServerRequest req, HTTPServerResponse res)
 	{
 		// Enforce GET method
-		enforceHTTP(req.method == HTTPMethod.GET, HTTPStatus.methodNotAllowed, "Expected method GET on path: /image");
+		enforceHTTP(req.method == HTTPMethod.GET, HTTPStatus.methodNotAllowed, "Expected GET on path: /image");
 		
 		// Captcha UUID string variable
 		string uuid;
@@ -249,27 +249,14 @@ int main(string[] args)
 			return;
 		}
 		
-		// First try validating captcha using Authorization header
-		if("Authorization" in req.headers)
-		{
-			// Enforce GET method
-			enforceHTTP(req.method == HTTPMethod.GET, HTTPStatus.methodNotAllowed, "Expected method GET when using Authorization header");
-			
-			// Make sure Authorization method is Sicas
-			if(!req.headers["Authorization"][0 .. 6].asCapitalized.equal("Sicas "))
-			{
-				// Return 400 (Bad Request) if Authorizationn header is not Sicas
-				res.writeJsonBody(Response(HTTPStatus.badRequest, "Unsupported authorization method"), HTTPStatus.badRequest);
-				return;
-			}
-			
-			text = cast(string) Base64URL.decode(req.headers["Authorization"][6 .. $]);
-		}
+		// First try validating captcha using string query
+		if("string" in req.query)
+			text = req.query["string"];
 		
 		// ...otherwise validate captcha using POST
 		else if(req.method != HTTPMethod.POST)
 		{
-			res.writeJsonBody(Response(HTTPStatus.methodNotAllowed, "Expected method POST when not using Authorization header"), HTTPStatus.methodNotAllowed);
+			res.writeJsonBody(Response(HTTPStatus.methodNotAllowed, "Expected POST when not passing string as query"), HTTPStatus.methodNotAllowed);
 			return;
 		}
 		
