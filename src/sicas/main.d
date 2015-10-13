@@ -37,7 +37,7 @@ struct Response
 
 int main(string[] args)
 {
-	enum	PROGRAM_VERSION		= "1.30";
+	enum	PROGRAM_VERSION		= "1.40";
 	enum	PROGRAM_BUILD_YEAR	= "2015";
 	
 	ushort	captchaLength		= 6;			// Minimum (default) captcha string length
