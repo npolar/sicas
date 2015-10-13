@@ -23,10 +23,30 @@
 	</head>
 	
 	<body>
-		<form class="sicas" method="post" action="//localhost:20938/validate">
-			<img src="//localhost:20938/captcha?width=128" alt="captcha">
+		<form class="sicas" method="post" action="">
+			<img alt="captcha">
 			<input type="text" name="sicas">
 			<input type="submit" value="OK!">
 		</form>
+		
+		<script>
+			var sicas = "//localhost:20938";
+			
+			(function(url, callback){
+				var xhr = new XMLHttpRequest();
+				
+				xhr.onreadystatechange = function() {
+					if(xhr.readyState == 4 && (xhr.status == 200 || xhr.status === 0)) {
+						callback(JSON.parse(xhr.responseText));
+					}
+				};
+				
+				xhr.open('GET', url, true);
+				xhr.send();
+			})(sicas + "/captcha?width=128", function(json) {
+				document.querySelector("form.sicas").setAttribute("action", sicas + "/validate/" + json.uuid);
+				document.querySelector("img[alt=captcha]").src = sicas + "/image/" + json.uuid;
+			});
+		</script>
 	</body>
 </html>
