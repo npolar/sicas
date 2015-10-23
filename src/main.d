@@ -3,16 +3,12 @@ import sicas.fonts;
 import vibe.d;
 
 import std.math			: floor;
-import std.algorithm	: equal, fill, sum, max;
+import std.algorithm	: fill, sum, max;
 import std.random		: Random, randomCover, unpredictableSeed, uniform;
 import std.conv			: to;
 import std.stdio		: stderr, writefln;
 import std.getopt		: getopt;
 import std.uuid			: UUID, randomUUID;
-import std.digest.sha	: sha1Of, toHexString;
-import std.regex		: matchFirst;
-import std.uni			: asCapitalized;
-import std.base64		: Base64URL;
 
 struct Captcha
 {
