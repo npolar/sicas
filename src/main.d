@@ -37,7 +37,7 @@ struct Response
 
 int main(string[] args)
 {
-	enum	PROGRAM_VERSION		= "1.50";
+	enum	PROGRAM_VERSION		= "1.51";
 	enum	PROGRAM_BUILD_YEAR	= "2015";
 	
 	ushort	captchaLength		= 6;			// Minimum (default) captcha string length
@@ -107,6 +107,14 @@ int main(string[] args)
 	// Function called to generate new captcha image
 	void routeGenerate(HTTPServerRequest req, HTTPServerResponse res)
 	{
+		// Handle OPTIONS requests
+		if(req.method == HTTPMethod.OPTIONS)
+		{
+			res.headers["Allow"] = "HEAD,GET,OPTIONS";
+			res.writeVoidBody();
+			return;
+		}
+		
 		// Enforce GET or HEAD method
 		enforceHTTP(req.method == HTTPMethod.GET || req.method == HTTPMethod.HEAD, HTTPStatus.methodNotAllowed, "Expected GET on path: /");
 		
@@ -193,7 +201,15 @@ int main(string[] args)
 		// Add response headers
 		res.headers["Access-Control-Allow-Origin"] = "*";
 		res.headers["Content-Location"] = "/image/" ~ uuid;
+		res.headers["Content-Type"] = "application/json; charset=UTF-8";
 		res.headers["Expires"] = toRFC822DateTimeString(expires);
+		
+		// Reply with no body if HEAD was requested
+		if(req.method == HTTPMethod.HEAD)
+		{
+			res.writeVoidBody();
+			return;
+		}
 		
 		res.writeJsonBody([
 			"uuid": uuid,
