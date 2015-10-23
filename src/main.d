@@ -37,7 +37,7 @@ struct Response
 
 int main(string[] args)
 {
-	enum	PROGRAM_VERSION		= "1.40";
+	enum	PROGRAM_VERSION		= "1.50";
 	enum	PROGRAM_BUILD_YEAR	= "2015";
 	
 	ushort	captchaLength		= 6;			// Minimum (default) captcha string length
@@ -105,10 +105,10 @@ int main(string[] args)
 	} else captchaFont = &fonts["default"];
 	
 	// Function called to generate new captcha image
-	void routeCaptcha(HTTPServerRequest req, HTTPServerResponse res)
+	void routeGenerate(HTTPServerRequest req, HTTPServerResponse res)
 	{
 		// Enforce GET or HEAD method
-		enforceHTTP(req.method == HTTPMethod.GET || req.method == HTTPMethod.HEAD, HTTPStatus.methodNotAllowed, "Expected GET on path: /captcha");
+		enforceHTTP(req.method == HTTPMethod.GET || req.method == HTTPMethod.HEAD, HTTPStatus.methodNotAllowed, "Expected GET on path: /");
 		
 		ushort width	= imageWidth;
 		ushort height	= imageHeight;
@@ -284,7 +284,7 @@ int main(string[] args)
 	// Create URL routes for captcha generation/validation
 	auto router = new URLRouter;
 	router
-	.any("/captcha", &routeCaptcha)
+	.any("/", &routeGenerate)
 	.any("/image/:uuid", &routeImage)
 	.any("/validate/:uuid", &routeValidate);
 	
@@ -292,6 +292,8 @@ int main(string[] args)
 	auto httpSettings = new HTTPServerSettings;
 	httpSettings.options |= HTTPServerOption.distribute;
 	httpSettings.port = port;
+	
+	// TODO: Add HTTPS support (httpSettings.tlsContext)
 	
 	// Start HTTP listening, and run event loop
 	listenHTTP(httpSettings, router);
