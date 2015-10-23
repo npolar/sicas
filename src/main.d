@@ -37,7 +37,7 @@ struct Response
 
 int main(string[] args)
 {
-	enum	PROGRAM_VERSION		= "1.51";
+	enum	PROGRAM_VERSION		= "1.52";
 	enum	PROGRAM_BUILD_YEAR	= "2015";
 	
 	ushort	captchaLength		= 6;			// Minimum (default) captcha string length
@@ -46,6 +46,7 @@ int main(string[] args)
 	ushort	imageHeight			= 32;			// Minimum (default) image width in pixels
 	ushort	imageWidth			= 64;			// Minimum (default) image width in pixels
 	ushort	timeout				= 120;			// Captcha timeout in seconds
+	bool	corsEnabled			= false;		// Cross-origin resource sharing
 	
 	// Parse program arguments as options
 	bool optHelp, optVersion;
@@ -55,6 +56,7 @@ int main(string[] args)
 		"p|port",		"sicas server port (default: 20938)",			&port,
 		"w|width",		"captcha image width (default: 64)",			&imageWidth,
 		"t|timeout",	"response timeout in seconds (default: 120)",	&timeout,
+		"cors",			"enable cross-origin resource sharing (CORS)",	&corsEnabled,
 		"help",			"display this help information and exit",		&optHelp,
 		"version",		"display version information and exit",			&optVersion
 	);
@@ -107,6 +109,13 @@ int main(string[] args)
 	// Function called to generate new captcha image
 	void routeGenerate(HTTPServerRequest req, HTTPServerResponse res)
 	{
+		// Enable CORS support if required
+		if(corsEnabled)
+		{
+			res.headers["Access-Control-Allow-Headers"] = "Authorization";
+			res.headers["Access-Control-Allow-Origin"] = "*";
+		}
+		
 		// Handle OPTIONS requests
 		if(req.method == HTTPMethod.OPTIONS)
 		{
@@ -199,7 +208,6 @@ int main(string[] args)
 		setTimer(timeout.seconds, { captchas.remove(uuid); });
 		
 		// Add response headers
-		res.headers["Access-Control-Allow-Origin"] = "*";
 		res.headers["Content-Location"] = "/image/" ~ uuid;
 		res.headers["Content-Type"] = "application/json; charset=UTF-8";
 		res.headers["Expires"] = toRFC822DateTimeString(expires);
